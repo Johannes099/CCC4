@@ -150,6 +150,8 @@ struct Solver {
     bool ping;    // free start + setup cost (PING or CYCLE)
     bool cyc;     // cyclic walk: step K is followed by step 1 (forward-only objective)
     bool firstEv; // also require first event (PING)
+    bool fixedEnd = false; // chain mode: state at step K is frozen
+    St endSt[6];
     St start[6];  // fixed start (chain mode)
     int K;
     vector<St> s[6];
@@ -313,6 +315,7 @@ struct Solver {
                 }
                 if (!ok || !segValid(t, i, j, changes)) continue;
             }
+            if (fixedEnd) { bool bad = false; for (auto& ch : changes) if (get<1>(ch) == K) bad = true; if (bad) continue; }
             // apply
             stampId++; touched.clear();
             vector<St>& tr = s[t];
@@ -362,6 +365,7 @@ struct Solver {
         }
         K--;
         bool ok = true;
+        if (fixedEnd) for (int t = 0; t < 6; t++) if (s[t][K].p != endSt[t].p || s[t][K].a != endSt[t].a) ok = false;
         if (cyc && K >= 1) for (int t = 0; t < 6; t++) if (!adj(s[t][K], s[t][1])) ok = false;
         rebuild();
         return ok;
@@ -463,6 +467,7 @@ vector<Case> readInput(const string& path) {
 
 // minimize k for a walk under a given mode; returns best walk with V==0
 // seconds: total budget
+bool shrinkWalk(Solver& sv, double seconds, double perTry);
 bool minimizeWalk(Solver& sv, int k0, const St* start, double seconds, double perTry) {
     auto t0 = chrono::steady_clock::now();
     auto elapsed = [&] { return chrono::duration<double>(chrono::steady_clock::now() - t0).count(); };
@@ -477,6 +482,12 @@ bool minimizeWalk(Solver& sv, int k0, const St* start, double seconds, double pe
             for (int q = 0; q < add; q++) sv.insertStep(1 + rndi(sv.K));
         }
     }
+    return shrinkWalk(sv, max(0.0, seconds - elapsed()), perTry);
+}
+
+bool shrinkWalk(Solver& sv, double seconds, double perTry) {
+    auto t0 = chrono::steady_clock::now();
+    auto elapsed = [&] { return chrono::duration<double>(chrono::steady_clock::now() - t0).count(); };
     vector<St> best[6]; int bestK = sv.K;
     for (int t = 0; t < 6; t++) best[t] = sv.s[t];
     int fails = 0;
@@ -564,7 +575,7 @@ int main(int argc, char** argv) {
         for (int mode = 1; mode <= 2 && doPing; mode++) {
             Solver sv(g, mode);
             sv.wS = 1.0 / (cs.req + 1);
-            bool ok = minimizeWalk(sv, kGuess, nullptr, secs * share / 2, secs * share / 16);
+            bool ok = minimizeWalk(sv, kGuess, nullptr, secs * share / 3, secs * share / 24);
             if (!ok) continue;
             St s1[6]; for (int t = 0; t < 6; t++) s1[t] = sv.s[t][1];
             int S = sv.setupCost();
@@ -581,6 +592,30 @@ int main(int argc, char** argv) {
                     part = walkToProg(sv.s, 1, sv.K, last);
                 }
                 prog.insert(prog.end(), part.begin(), part.end());
+            }
+            // hybrid: re-optimise the first copy (setup + W) as a chain walk from init with frozen end state
+            {
+                int L0 = S + sv.K;
+                Solver hv(g, 0);
+                hv.init(L0, init);
+                St cur2[6]; for (int t = 0; t < 6; t++) cur2[t] = init[t];
+                for (int i = 1; i <= L0; i++) for (int t = 0; t < 6; t++) {
+                    char c = prog[i - 1][t];
+                    if (c == 'F') cur2[t].p++; else if (c == 'B') cur2[t].p--; else if (c == 'T') cur2[t].a = 1 - cur2[t].a;
+                    hv.s[t][i] = cur2[t];
+                }
+                hv.fixedEnd = true;
+                for (int t = 0; t < 6; t++) hv.endSt[t] = hv.s[t][L0];
+                hv.rebuild();
+                if (hv.V == 0) {
+                    shrinkWalk(hv, secs * share / 6, secs * share / 48);
+                    if (hv.K < L0) {
+                        auto first = walkToProg(hv.s, 1, hv.K, init);
+                        vector<array<char,6>> np(first);
+                        np.insert(np.end(), prog.begin() + L0, prog.end());
+                        prog = np;
+                    }
+                } else fprintf(stderr, "case %d hybrid init V=%lld\n", ci, hv.V);
             }
             int used; int acc = simulateExact(g, prog, cs.req, used);
             const char* nm = mode == 1 ? "ping" : "cycle";
