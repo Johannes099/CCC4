@@ -468,10 +468,51 @@ vector<Case> readInput(const string& path) {
 // minimize k for a walk under a given mode; returns best walk with V==0
 // seconds: total budget
 bool shrinkWalk(Solver& sv, double seconds, double perTry);
-bool minimizeWalk(Solver& sv, int k0, const St* start, double seconds, double perTry) {
+
+// seed a chain-mode solver with a line-pair sweep along axis a (emitters a, a+3)
+void seedSweep(Solver& sv, int a, const St* start) {
+    const Geo& g = sv.g;
+    int R = g.R;
+    auto partner = [&](int p) {
+        auto A = g.ray[a][p + R]; sort(A.begin(), A.end());
+        for (int q = -(R - 1); q <= R - 1; q++) { auto B = g.ray[a + 3][q + R]; sort(B.begin(), B.end()); if (A == B) return q; }
+        return 0;
+    };
+    vector<vector<St>> tr(6);
+    for (int t = 0; t < 6; t++) {
+        St c = start[t];
+        tr[t].push_back(c);
+        if (t != a && t != a + 3) { if (c.a) { c.a = 0; tr[t].push_back(c); } continue; }
+    }
+    int p0 = -(R - 1);
+    int tgt[2] = {p0, partner(p0)};
+    int ems[2] = {a, a + 3};
+    for (int e = 0; e < 2; e++) {
+        int t = ems[e]; St c = start[t];
+        if (c.a) { c.a = 0; tr[t].push_back(c); }
+        while (c.p != tgt[e]) { c.p += c.p < tgt[e] ? 1 : -1; tr[t].push_back(c); }
+        c.a = 1; tr[t].push_back(c);
+    }
+    size_t L1 = max(tr[a].size(), tr[a + 3].size());
+    // align: pad the shorter pair member at the front (wait before acting) so both switch on together
+    for (int e = 0; e < 2; e++) { int t = ems[e]; while (tr[t].size() < L1) tr[t].insert(tr[t].begin() + 1, tr[t][0]); }
+    for (int p = p0 + 1; p <= R - 1; p++) {
+        tr[a].push_back({(int8_t)p, 1});
+        tr[a + 3].push_back({(int8_t)partner(p), 1});
+    }
+    int K = tr[a].size() - 1;
+    sv.init(K, start);
+    for (int t = 0; t < 6; t++) for (int i = 1; i <= K; i++) sv.s[t][i] = i < (int)tr[t].size() ? tr[t][i] : tr[t].back();
+    sv.rebuild();
+}
+bool minimizeWalk(Solver& sv, int k0, const St* start, double seconds, double perTry, int seedAxis = -1) {
     auto t0 = chrono::steady_clock::now();
     auto elapsed = [&] { return chrono::duration<double>(chrono::steady_clock::now() - t0).count(); };
-    sv.init(k0, start);
+    if (seedAxis >= 0) {
+        seedSweep(sv, seedAxis, start);
+        int add = sv.K / 3 + 2;
+        for (int q = 0; q < add; q++) sv.insertStep(1 + rndi(sv.K));
+    } else sv.init(k0, start);
     // find a feasible solution, increasing k if needed
     bool ok = false;
     while (!ok) {
@@ -559,12 +600,19 @@ int main(int argc, char** argv) {
             St cur[6]; for (int t = 0; t < 6; t++) cur[t] = init[t];
             bool ok = true;
             for (int c = 0; c < cs.req && ok; c++) {
-                Solver sv(g, false);
-                ok = minimizeWalk(sv, kGuess + g.R, cur, secs * share / cs.req, secs * share / cs.req / 8);
-                if (!ok) break;
-                auto part = walkToProg(sv.s, 1, sv.K, cur);
+                bool dense = g.nTarget * 10 >= g.N * 4 && g.R >= 6;
+                int nv = dense ? 4 : 1;
+                double tsh = secs * share / cs.req / nv;
+                vector<St> bestS[6]; int bestK = INT_MAX;
+                for (int v = 0; v < nv; v++) {
+                    Solver sv(g, false);
+                    bool r = minimizeWalk(sv, kGuess + g.R, cur, tsh, tsh / 8, v - 1);
+                    if (r && sv.K < bestK) { bestK = sv.K; for (int t = 0; t < 6; t++) bestS[t] = sv.s[t]; }
+                }
+                if (bestK == INT_MAX) { ok = false; break; }
+                auto part = walkToProg(bestS, 1, bestK, cur);
                 prog.insert(prog.end(), part.begin(), part.end());
-                for (int t = 0; t < 6; t++) cur[t] = sv.s[t][sv.K];
+                for (int t = 0; t < 6; t++) cur[t] = bestS[t][bestK];
             }
             if (ok) {
                 int used; int acc = simulateExact(g, prog, cs.req, used);
