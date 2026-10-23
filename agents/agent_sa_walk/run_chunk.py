@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 chunk, nchunks, outdir = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
 cfg = {}
-for line in open(os.path.join(HERE, 'run.cfg')):
+for line in open(sys.argv[4] if len(sys.argv) > 4 else os.path.join(HERE, 'run.cfg')):
     line = line.split('#')[0].split()
     if len(line) == 2:
         cfg[line[0]] = line[1]
