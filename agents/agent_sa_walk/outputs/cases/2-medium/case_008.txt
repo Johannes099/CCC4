@@ -1,0 +1,11 @@
+B F B - B -
+B T T T B T
+T T - F T -
+- - - - - -
+T T - B T -
+- - - - - -
+T T - F T -
+- - - - - -
+T T - B T -
+- - - - - -
+T T - F T -

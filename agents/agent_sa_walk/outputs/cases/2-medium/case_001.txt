@@ -1,0 +1,15 @@
+F B B F B F
+- B B - B F
+- - B - - -
+T T T - T T
+- - - - F B
+T - B T F B
+- - - - - -
+T - F T B F
+- - - - B F
+- - - - - -
+- - - - F B
+T - B T F B
+- - - - - -
+T - F T B F
+- - - - B F

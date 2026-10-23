@@ -1,0 +1,69 @@
+name: level6-solve
+
+# Runs agent_sa_walk on GitHub runners (matrix over dataset chunks), then merges
+# every valid shorter program into best_outputs/ and refreshes LEVEL6_BOARD.md.
+# Trigger: push touching agents/agent_sa_walk/run.cfg, or manual dispatch.
+
+on:
+  push:
+    branches: [claude/quirky-faraday-yvwqs6]
+    paths: [agents/agent_sa_walk/run.cfg]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: g++ -O2 -march=native -o solver agents/agent_sa_walk/solver.cpp
+      - name: Solve chunk
+        run: python3 agents/agent_sa_walk/run_chunk.py ${{ matrix.chunk }} 19 out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cases-${{ matrix.chunk }}
+          path: out
+          retention-days: 7
+
+  merge:
+    needs: solve
+    if: always()
+    runs-on: ubuntu-latest
+    concurrency: level6-merge
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Merge, validate, update board
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          for ds in 0-example 1-small 2-medium 3-large 4-enormous; do
+            dirs=$(ls -d art/cases-*/$ds 2>/dev/null || true)
+            [ -z "$dirs" ] && continue
+            mkdir -p agents/agent_sa_walk/outputs/cases/$ds
+            python3 tools/keep_best_cases.py $ds agents/agent_sa_walk/outputs $dirs
+            python3 tools/merge.py $ds agents/agent_sa_walk/outputs/cases/$ds || true
+          done
+          python3 tools/board.py > /dev/null
+          git add best_outputs agents/agent_sa_walk/outputs LEVEL6_BOARD.md
+          git diff --cached --quiet && exit 0
+          git commit -m "level6: merge agent_sa_walk run ${GITHUB_RUN_ID}"
+          for attempt in 1 2 3 4 5; do
+            git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((attempt * 5))
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" || exit 1
+          done
+          exit 1

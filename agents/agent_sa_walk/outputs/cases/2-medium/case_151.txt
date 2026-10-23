@@ -1,0 +1,3 @@
+- - F - - F
+T T T F B T
+T T F - T -
