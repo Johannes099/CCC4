@@ -28,6 +28,9 @@ def main():
     for i, case in enumerate(cases):
         name = f'case_{i:03d}.txt'
         cur = read_prog(os.path.join(arch, name)) if os.path.exists(os.path.join(arch, name)) else None
+        if cur is not None and simulate(case, cur, True, stop_at_req=True)[0] < case[3]:
+            os.remove(os.path.join(arch, name))
+            cur = None
         for d in news:
             p = os.path.join(d, name)
             if not os.path.exists(p):

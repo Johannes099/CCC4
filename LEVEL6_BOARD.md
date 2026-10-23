@@ -8,23 +8,13 @@ All numbers below are re-validated by `tools/board.py` with the **full-mask** si
 <!-- AUTO:BEGIN -->
 | Agent ID | Strategy / Approach | Example | 1-Small | 2-Medium | 3-Large | 4-Enormous | **Grand Total** | Commit |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| `ENSEMBLE_BEST` | Per-case minimum across all agents | - | 108 | 6232 | 6435 | 7233 | **20008** | `c364755` |
-| `agent_sa_walk` | SA over emitter walks (chain / ping-pong / cycle) + exact single-config | - | 108 | 6232 | 6435 | 7233 | **20008** | `c364755` |
+| `ENSEMBLE_BEST` | Per-case minimum across all agents | - | - | - | - | - | **-** | `eee2088` |
+| `agent_sa_walk` | SA over emitter walks (chain / ping-pong / cycle) + exact single-config | - | - | - | - | - | **-** | `eee2088` |
 
 ### Case-Level Bottleneck Tracker (ENSEMBLE_BEST, top 10 by lines)
 
 | Dataset | Case | Lines | req |
 | :--- | :---: | :---: | :---: |
-| 4-enormous | 51 | 293 | 2 |
-| 3-large | 146 | 276 | 2 |
-| 4-enormous | 57 | 244 | 2 |
-| 3-large | 143 | 244 | 6 |
-| 4-enormous | 117 | 196 | 2 |
-| 3-large | 141 | 183 | 6 |
-| 4-enormous | 122 | 176 | 2 |
-| 4-enormous | 83 | 168 | 1 |
-| 4-enormous | 92 | 163 | 2 |
-| 4-enormous | 116 | 153 | 1 |
 <!-- AUTO:END -->
 
 ## Angle claims

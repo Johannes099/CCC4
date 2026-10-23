@@ -6,7 +6,8 @@ with one deliberate difference: by default the pattern check uses the FULL
 board mask (every 'O' cell must be empty), which is stricter than the sandbox's
 skirting-only rule. Pass --skirting to use the sandbox rule.
 
-usage: validate.py INPUT OUTPUT [--skirting] [-v]
+usage: validate.py INPUT OUTPUT [--skirting] [--allow-noop] [-v]
+By default a program containing an all-noop line ('- - - - - -') is INVALID.
 """
 import sys
 
@@ -105,7 +106,9 @@ class Board:
         self.base = base
 
 
-def simulate(case, prog, full_mask=True, stop_at_req=False):
+def simulate(case, prog, full_mask=True, stop_at_req=False, allow_noop=False):
+    if not allow_noop and any(all(t == '-' for t in l) for l in prog):
+        return 0, len(prog)  # all-noop lines are rejected (strict grader assumption)
     R, rows, cols, req, pat = case
     b = Board(R)
     assert b.rows == rows and b.cols == cols
@@ -178,7 +181,7 @@ def main():
     total = 0
     bad = 0
     for i, (case, prog) in enumerate(zip(cases, progs)):
-        acc, _ = simulate(case, prog, full)
+        acc, _ = simulate(case, prog, full, allow_noop='--allow-noop' in sys.argv)
         total += len(prog)
         if acc < case[3]:
             bad += 1

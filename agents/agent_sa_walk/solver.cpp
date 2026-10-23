@@ -159,6 +159,7 @@ struct Solver {
     int KS;
     vector<int> viol;      // per cell
     long long V;           // total violations
+    int Z = 0;             // idle transitions (would be all-noop lines)
     int S;                 // setup cost (ping)
     double wS;
     vector<int> stamp; int stampId = 0;
@@ -191,7 +192,19 @@ struct Solver {
         for (int t = 0; t < 6; t++) { int d = abs(s[t][1].p); int need = s[t][1].a ? d : d - 1; m = max(m, need); }
         return m;
     }
-    double cost() const { return V + (ping ? wS * S : 0.0); }
+    int zeroCount() const {
+        int z = 0;
+        for (int i = 1; i <= K; i++) {
+            const vector<St>* pv; int pi;
+            if (i > 1) pi = i - 1; else if (!ping) pi = 0; else if (cyc) pi = K; else continue;
+            bool same = true;
+            for (int t = 0; t < 6 && same; t++) if (s[t][pi].p != s[t][i].p || s[t][pi].a != s[t][i].a) same = false;
+            (void)pv;
+            if (same) z++;
+        }
+        return z;
+    }
+    double cost() const { return V + Z + (ping ? wS * S : 0.0); }
     void rebuild() {
         KS = K + 1;
         cnt.assign((size_t)g.N * KS, 0);
@@ -199,6 +212,7 @@ struct Solver {
         viol.assign(g.N, 0); V = 0;
         for (int c = 0; c < g.N; c++) { viol[c] = cellViol(c); V += viol[c]; }
         S = ping ? setupCost() : 0;
+        Z = zeroCount();
         stamp.assign(g.N, 0);
     }
     void init(int k, const St* st) {
@@ -325,6 +339,7 @@ struct Solver {
             int oldS = S;
             long long dv = recompute(oldViol);
             if (ping) S = setupCost();
+            int oldZ = Z; Z = zeroCount();
             double nc = cost();
             double delta = nc - oldCost;
             if (delta <= 0 || rndf() < exp(-delta / T)) {
@@ -334,13 +349,13 @@ struct Solver {
                 stampId++; touched.clear();
                 for (int q = (int)changes.size() - 1; q >= 0; q--) setState(get<0>(changes[q]), get<1>(changes[q]), saved[q]);
                 for (size_t q = 0; q < touched.size(); q++) { int c = touched[q]; int nv = cellViol(c); V += nv - viol[c]; viol[c] = nv; }
-                S = oldS;
+                S = oldS; Z = oldZ;
                 (void)dv;
             }
         }
         for (int t = 0; t < 6; t++) s[t] = best[t];
         rebuild();
-        return V == 0;
+        return V == 0 && Z == 0;
     }
 
     // remove step i (1..K), repairing adjacency by chasing
@@ -380,7 +395,7 @@ struct Solver {
 
 // exact search for a single configuration whose count-2 set equals the target.
 // returns best setup cost S (max |p| over active emitters) or -1.
-int exactSingle(const Geo& g, St* out, long long budget) {
+int exactSingle(const Geo& g, St* out, long long budget, bool needFree) {
     vector<vector<int>> opts(6);
     for (int t = 0; t < 6; t++) {
         opts[t].push_back(INT_MIN); // inactive
@@ -397,6 +412,7 @@ int exactSingle(const Geo& g, St* out, long long budget) {
         if (best >= 0 && mx >= best) return;
         if (++evals > budget) return;
         if (t == 6) {
+            if (needFree) { bool fr = false; for (int q = 0; q < 6; q++) if (cur[q] == INT_MIN) fr = true; if (!fr) return; }
             for (int c = 0; c < g.N; c++) if ((cnt[c] == 2) != (bool)g.target[c]) return;
             best = mx;
             for (int q = 0; q < 6; q++) out[q] = cur[q] == INT_MIN ? St{0, 0} : St{(int8_t)cur[q], 1};
@@ -445,6 +461,46 @@ static vector<array<char,6>> setupProg(const St* target, int S) {
         if (target[t].a) out[S][t] = 'T';
     }
     return out; // last line is step 1 of the walk
+}
+
+
+// replace all-noop lines by harmless emitter wiggles (compensated later); returns false if impossible
+static bool isNoop(const array<char,6>& l) { for (char c : l) if (c != '-') return false; return true; }
+bool denoop(const Geo& g, vector<array<char,6>>& prog, int req) {
+    auto harmless = [&](int t, int idx, bool a) {
+        if (!a) return true;
+        for (int rc : g.rayAll[t][idx]) if (g.cellId[rc] >= 0) return false;
+        return true;
+    };
+    for (size_t i = 0; i < prog.size(); i++) {
+        if (!isNoop(prog[i])) continue;
+        // states after each line
+        int n = prog.size();
+        vector<array<int,6>> I(n); vector<array<char,6>> A(n);
+        { array<int,6> id; array<char,6> ac; for (int t = 0; t < 6; t++) { id[t] = t * g.R; ac[t] = 0; }
+          for (int j = 0; j < n; j++) { for (int t = 0; t < 6; t++) { char c = prog[j][t]; if (c == 'F') id[t] = (id[t] + 1) % g.P; else if (c == 'B') id[t] = (id[t] + g.P - 1) % g.P; else if (c == 'T') ac[t] ^= 1; } I[j] = id; A[j] = ac; } }
+        bool done = false;
+        for (int t = 0; t < 6 && !done; t++) for (int d = 1; d >= -1 && !done; d -= 2) {
+            int i0 = I[i][t]; bool a0 = A[i][t];
+            int i1 = ((i0 + d) % g.P + g.P) % g.P;
+            if (!harmless(t, i0, a0) || !harmless(t, i1, a0)) continue;
+            bool firesLater = false;
+            for (int j = i + 1; j < n && !firesLater; j++) if (!harmless(t, I[j][t], A[j][t])) firesLater = true;
+            auto cand = prog;
+            cand[i][t] = d == 1 ? 'F' : 'B';
+            bool ok = !firesLater;
+            if (!ok) for (int j = i + 1; j < n; j++) {
+                int sidx = ((I[j - 1][t] + d) % g.P + g.P) % g.P;
+                if (!harmless(t, sidx, A[j - 1][t])) break;
+                if (prog[j][t] == '-' && harmless(t, I[j][t], A[j][t])) { cand[j][t] = d == 1 ? 'B' : 'F'; ok = true; break; }
+            }
+            if (!ok) continue;
+            int used; int acc = simulateExact(g, cand, req, used);
+            if (acc >= req) { cand.resize(used); prog = cand; done = true; }
+        }
+        if (!done) return false;
+    }
+    return true;
 }
 
 string progToStr(const vector<array<char,6>>& prog) {
@@ -541,7 +597,7 @@ bool shrinkWalk(Solver& sv, double seconds, double perTry) {
         shuffle(order.begin(), order.end(), rng);
         for (int i : order) {
             bool okr = sv.removeStep(i);
-            long long v = okr ? sv.V * 4 + (sv.ping ? sv.S : 0) + rndi(3) : LLONG_MAX;
+            long long v = okr ? (sv.V + sv.Z) * 4 + (sv.ping ? sv.S : 0) + rndi(3) : LLONG_MAX;
             if (v < bv) { bv = v; bi = i; }
             for (int t = 0; t < 6; t++) sv.s[t] = keep[t];
             sv.K = keepK;
@@ -549,7 +605,7 @@ bool shrinkWalk(Solver& sv, double seconds, double perTry) {
         sv.rebuild();
         if (bi < 0) break;
         sv.removeStep(bi);
-        bool r = sv.V == 0 || sv.anneal(perTry, 1.0, 0.05);
+        bool r = (sv.V + sv.Z) == 0 || sv.anneal(perTry, 1.0, 0.05);
         if (r) {
             bestK = sv.K; for (int t = 0; t < 6; t++) best[t] = sv.s[t];
             fails = 0;
@@ -582,12 +638,13 @@ int main(int argc, char** argv) {
         int kGuess = max(2, g.nTarget / 3 + 2);
         {
             St one[6];
-            int S1 = exactSingle(g, one, 20000000);
+            int S1 = exactSingle(g, one, 20000000, cs.req > 1);
             if (S1 >= 0) {
                 auto prog = setupProg(one, S1);
-                for (int c = 1; c < cs.req; c++) { array<char,6> l; l.fill('-'); prog.push_back(l); }
+                int fe = 0; while (one[fe].a) fe++;
+                for (int c = 1; c < cs.req; c++) { array<char,6> l; l.fill('-'); l[fe] = (c % 2) ? 'F' : 'B'; prog.push_back(l); }
                 int used; int acc = simulateExact(g, prog, cs.req, used);
-                if (acc >= cs.req) { prog.resize(used); bestLen = prog.size(); bestProg = prog; bestMode = "single"; }
+                if (acc >= cs.req) { prog.resize(used); if (denoop(g, prog, cs.req)) { bestLen = prog.size(); bestProg = prog; bestMode = "single"; } }
                 else fprintf(stderr, "case %d single sim failed\n", ci);
             }
         }
@@ -616,7 +673,7 @@ int main(int argc, char** argv) {
             }
             if (ok) {
                 int used; int acc = simulateExact(g, prog, cs.req, used);
-                if (acc >= cs.req) { prog.resize(used); if ((int)prog.size() < bestLen) { bestLen = prog.size(); bestProg = prog; bestMode = "chain"; } }
+                if (acc >= cs.req) { prog.resize(used); if (denoop(g, prog, cs.req) && (int)prog.size() < bestLen) { bestLen = prog.size(); bestProg = prog; bestMode = "chain"; } }
                 else fprintf(stderr, "case %d chain sim failed acc=%d\n", ci, acc);
             }
         }
@@ -655,7 +712,7 @@ int main(int argc, char** argv) {
                 hv.fixedEnd = true;
                 for (int t = 0; t < 6; t++) hv.endSt[t] = hv.s[t][L0];
                 hv.rebuild();
-                if (hv.V == 0) {
+                if (hv.V + hv.Z == 0) {
                     shrinkWalk(hv, secs * share / 6, secs * share / 48);
                     if (hv.K < L0) {
                         auto first = walkToProg(hv.s, 1, hv.K, init);
@@ -667,10 +724,15 @@ int main(int argc, char** argv) {
             }
             int used; int acc = simulateExact(g, prog, cs.req, used);
             const char* nm = mode == 1 ? "ping" : "cycle";
-            if (acc >= cs.req) { prog.resize(used); if ((int)prog.size() < bestLen) { bestLen = prog.size(); bestProg = prog; bestMode = nm; } }
+            if (acc >= cs.req) { prog.resize(used); if (denoop(g, prog, cs.req) && (int)prog.size() < bestLen) { bestLen = prog.size(); bestProg = prog; bestMode = nm; } }
             else fprintf(stderr, "case %d %s sim failed acc=%d\n", ci, nm, acc);
         }
         if (bestLen == INT_MAX) { fprintf(stderr, "case %d: NO SOLUTION\n", ci); continue; }
+        {
+            int used; int acc = simulateExact(g, bestProg, cs.req, used);
+            bool nn = true; for (auto& l : bestProg) if (isNoop(l)) nn = false;
+            if (acc < cs.req || !nn) { fprintf(stderr, "case %d: final check failed\n", ci); continue; }
+        }
         char fn[512]; snprintf(fn, sizeof fn, "%s/case_%03d.txt", outdir.c_str(), ci);
         ofstream f(fn); f << progToStr(bestProg);
         printf("case %d R=%d req=%d M=%d -> %d lines (%s)\n", ci, cs.R, cs.req, g.nTarget, bestLen, bestMode.c_str());
