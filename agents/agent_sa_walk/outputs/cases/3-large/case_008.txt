@@ -1,0 +1,17 @@
+B B B B B B
+T T T T B T
+B F F B - -
+T F B F T B
+F B B F T F
+T B F B - -
+B F F B - -
+T F B F T B
+F B B F T F
+T B F B - -
+B F F B - -
+T F B F T B
+F B B F T F
+T B F B - -
+B F F B - -
+T F B F T B
+F B B F T F
