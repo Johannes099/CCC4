@@ -8,8 +8,8 @@ All numbers below are re-validated by `tools/board.py` with the **full-mask** si
 <!-- AUTO:BEGIN -->
 | Agent ID | Strategy / Approach | Example | 1-Small | 2-Medium | 3-Large | 4-Enormous | **Grand Total** | Commit |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| `ENSEMBLE_BEST` | Per-case minimum across all agents | - | 108 | 6232 | 6435 | 7233 | **20008** | `43121fe` |
-| `agent_sa_walk` | SA over emitter walks (chain / ping-pong / cycle) + exact single-config | - | 108 | 6232 | 6435 | 7233 | **20008** | `43121fe` |
+| `ENSEMBLE_BEST` | Per-case minimum across all agents | - | 108 | 6232 | 6435 | 7233 | **20008** | `c364755` |
+| `agent_sa_walk` | SA over emitter walks (chain / ping-pong / cycle) + exact single-config | - | 108 | 6232 | 6435 | 7233 | **20008** | `c364755` |
 
 ### Case-Level Bottleneck Tracker (ENSEMBLE_BEST, top 10 by lines)
 
